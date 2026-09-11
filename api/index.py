@@ -112,7 +112,52 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(data, indent=2).encode('utf-8'))
             return
 
-        # Fallback 404 for unknown GET /api routes
+        # 3. Static Files & Root Delivery (index.html, css/*, js/*)
+        target_rel = 'index.html' if clean_path in ('', '/', '/index.html') else clean_path.lstrip('/')
+        search_dirs = [
+            PROJECT_ROOT,
+            os.getcwd(),
+            os.path.dirname(os.path.abspath(__file__)),
+            os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        ]
+        for base_dir in search_dirs:
+            candidate = os.path.normpath(os.path.join(base_dir, target_rel))
+            if os.path.isfile(candidate):
+                mime = 'application/octet-stream'
+                lower = candidate.lower()
+                if lower.endswith('.html'):
+                    mime = 'text/html; charset=utf-8'
+                elif lower.endswith('.css'):
+                    mime = 'text/css; charset=utf-8'
+                elif lower.endswith('.js') or lower.endswith('.mjs'):
+                    mime = 'application/javascript; charset=utf-8'
+                elif lower.endswith('.json'):
+                    mime = 'application/json; charset=utf-8'
+                elif lower.endswith('.svg'):
+                    mime = 'image/svg+xml'
+                elif lower.endswith('.png'):
+                    mime = 'image/png'
+                elif lower.endswith('.jpg') or lower.endswith('.jpeg'):
+                    mime = 'image/jpeg'
+                elif lower.endswith('.ico'):
+                    mime = 'image/x-icon'
+                elif lower.endswith('.wav'):
+                    mime = 'audio/wav'
+
+                try:
+                    with open(candidate, 'rb') as f:
+                        data = f.read()
+                    self.send_response(200)
+                    self.send_header('Content-Type', mime)
+                    self.send_header('Content-Length', str(len(data)))
+                    self._send_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+                except Exception:
+                    pass
+
+        # Fallback 404 for unknown routes
         self.send_response(404)
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self._send_cors_headers()
