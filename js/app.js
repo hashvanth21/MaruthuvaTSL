@@ -2,7 +2,7 @@
 import { TslVisionEngine } from './services/tslVisionEngine.js';
 import { SpeechAudioService } from './services/speechAudioService.js?v=20260911_tts_v5';
 import { TslAvatarRenderer } from './services/tslAvatarRenderer.js?v=20260911_hd_hands_v4';
-import { PrescriptionService } from './services/prescriptionService.js';
+import { PrescriptionService } from './services/prescriptionService.js?v=20260911_qr_v1';
 import { SarvamAiService, SIGN_PRE_MAP, LOCAL_TAMIL_DICTIONARY } from './services/sarvamAiService.js?v=20260911_tts_v5';
 import { IndicTrans2Service } from './services/indicTrans2Service.js?v=20260911_tts_v5';
 import { QwenClinicalService } from './services/qwenClinicalService.js?v=20260911_hd_hands_v4';
@@ -409,6 +409,18 @@ class MedTslApp {
     if (this.dom.printRxBtn) {
       this.dom.printRxBtn.addEventListener('click', () => {
         window.print();
+      });
+    }
+
+    if (this.dom.rxQrCodeImg) {
+      this.dom.rxQrCodeImg.title = 'QR குறியீட்டை போனில் ஸ்கேன் செய்க / அழுத்தினால் நகலெடுக்கப்படும் (Scan QR with phone / Click to copy Rx)';
+      this.dom.rxQrCodeImg.addEventListener('click', () => {
+        const txt = this.prescriptionService.compilePrescriptionText();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(() => {
+            this.triggerVisualApplause('மருந்துச் சீட்டு நகலெடுக்கப்பட்டது (Rx Copied)', 'Prescription text copied to clipboard successfully.');
+          }).catch(() => {});
+        }
       });
     }
   }

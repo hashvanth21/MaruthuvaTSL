@@ -511,11 +511,22 @@
 }
 
 .rx-qr-img {
-  width: 120px;
-  height: 120px;
+  width: 136px;
+  height: 136px;
+  min-width: 136px;
   border-radius: var(--radius-sm);
   background: #ffffff;
-  padding: 4px;
+  padding: 6px;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rx-qr-img:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.35);
 }
 
 .rx-qr-info h4 {
@@ -551,5 +562,10 @@
     border: none !important;
     box-shadow: none !important;
     max-height: none !important;
+  }
+  .rx-qr-img {
+    width: 160px !important;
+    height: 160px !important;
+    border: 1px solid #ccc !important;
   }
 }

@@ -1,4 +1,5 @@
 // Prescription Service with TSL Video / Animation Guidance & QR Code Generator
+import qrcode from './qrcode.js';
 import { PRESCRIPTION_MEDICINES } from '../data/doctorPresets.js';
 import { getTslSignById } from '../data/tslMedicalVocabulary.js';
 
@@ -76,67 +77,84 @@ export class PrescriptionService {
     return seq;
   }
 
+  getSimpleTimingDose(timing, foodRelation, days) {
+    let doseEn = '1 Morning + 1 Night';
+    if (timing === 'morning') doseEn = '1 Morning only';
+    else if (timing === 'night') doseEn = '1 Night only';
+    else if (timing === 'thrice') doseEn = '1 Morning + 1 Afternoon + 1 Night';
+    const foodEn = foodRelation === 'before_food' ? 'Before Food' : 'After Food';
+    return `${doseEn} (${foodEn}) for ${days} days`;
+  }
+
+  /**
+   * Compiles current prescription schedule into a clean, simple, scannable prescription.
+   * Scanned by standard phone cameras (iOS / Android / Google Lens) to display the prescription.
+   */
+  compilePrescriptionText() {
+    const p = this.currentPrescription;
+    const dateStr = new Date().toLocaleDateString('en-GB');
+    const lines = [
+      'MARUTHUVA TSL PRESCRIPTION',
+      `Patient ID: ${p.patientId}`,
+      `Date: ${dateStr}`,
+      '----------------------------------------',
+      'Rx Prescribed Medicines:'
+    ];
+
+    if (p.chiefComplaintsEn && p.chiefComplaintsEn.length > 0) {
+      lines.push(`Symptoms: ${p.chiefComplaintsEn.join(', ')}`);
+      lines.push('');
+    }
+
+    if (!p.medicines || p.medicines.length === 0) {
+      lines.push('(No medications prescribed yet)');
+    } else {
+      p.medicines.forEach((m, idx) => {
+        const doseStr = this.getSimpleTimingDose(m.timing, m.foodRelation, m.durationDays);
+        lines.push(`${idx + 1}. ${m.medicine.name}`);
+        lines.push(`   Dose: ${doseStr}`);
+      });
+    }
+
+    lines.push('----------------------------------------');
+    lines.push('Special Advice:');
+    lines.push('- Review in clinic after 3 days if symptoms persist.');
+    lines.push('- TSL Video Guidance: Sign language instruction available.');
+    lines.push('- Emergency Helpline: 108 / 104');
+
+    return lines.join('\n');
+  }
+
   /**
    * Data Quality & Privacy Guard:
-   * Generates a 100% offline, in-browser SVG QR Code matrix Data URI.
-   * Zero bytes sent to third-party endpoints (eliminating PHI leakage).
+   * Generates a 100% offline, in-browser ISO/IEC 18004 compliant QR Code Data URI.
+   * Fully generative: updates dynamically whenever medicines are added or modified.
+   * Scannable by any smartphone camera (iOS / Android / Lens) to deliver the simple prescription.
+   * Zero bytes sent to third-party endpoints (100% private & air-gapped).
    */
   generateQrCodeUrl(payloadText) {
-    const rawData = payloadText || JSON.stringify({
-      id: this.currentPrescription.patientId,
-      time: this.currentPrescription.timestamp,
-      meds: this.currentPrescription.medicines.map(m => m.medicine.name)
-    });
+    const rawData = payloadText || this.compilePrescriptionText();
 
-    // Generate deterministic 21x21 QR matrix pattern locally
-    const size = 21;
-    let seed = 0;
-    for (let i = 0; i < rawData.length; i++) {
-      seed = (seed * 31 + rawData.charCodeAt(i)) >>> 0;
-    }
-
-    const matrix = Array.from({ length: size }, () => Array(size).fill(0));
-
-    // Standard Finder Patterns (top-left, top-right, bottom-left)
-    const drawFinder = (r0, c0) => {
-      for (let r = 0; r < 7; r++) {
-        for (let c = 0; c < 7; c++) {
-          if (r === 0 || r === 6 || c === 0 || c === 6 || (r >= 2 && r <= 4 && c >= 2 && c <= 4)) {
-            matrix[r0 + r][c0 + c] = 1;
-          }
-        }
+    try {
+      if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']) {
+        qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
       }
-    };
-    drawFinder(0, 0);
-    drawFinder(0, size - 7);
-    drawFinder(size - 7, 0);
-
-    // Populate data cells deterministically from payload hash
-    let s = seed;
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
-        // Skip finder areas
-        if ((r < 8 && (c < 8 || c >= size - 8)) || (r >= size - 8 && c < 8)) continue;
-        s = (s * 1664525 + 1013904223) >>> 0;
-        matrix[r][c] = (s >> 16) % 2 === 0 ? 1 : 0;
+      const qr = qrcode(0, 'L');
+      qr.addData(rawData);
+      qr.make();
+      return qr.createDataURL(5, 16);
+    } catch (err) {
+      console.warn('QR Code generation with Level L failed, falling back to Level M:', err);
+      try {
+        const qrFallback = qrcode(0, 'M');
+        qrFallback.addData(rawData);
+        qrFallback.make();
+        return qrFallback.createDataURL(4, 16);
+      } catch (err2) {
+        console.error('Fatal QR Code generation error:', err2);
+        return '';
       }
     }
-
-    // Render clean, crisp SVG
-    const cellSize = 8;
-    const padding = 16;
-    const svgDim = size * cellSize + padding * 2;
-    let rects = '';
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
-        if (matrix[r][c] === 1) {
-          rects += `<rect x="${padding + c * cellSize}" y="${padding + r * cellSize}" width="${cellSize}" height="${cellSize}" fill="#0f172a" />`;
-        }
-      }
-    }
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgDim} ${svgDim}" width="180" height="180"><rect width="100%" height="100%" fill="#ffffff" rx="8" />${rects}</svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 
   generatePatientId() {
