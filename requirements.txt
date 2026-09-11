@@ -1,0 +1,6 @@
+# Maruthuva TSL - Python Runtime Dependencies
+# Designed with zero heavy binary dependencies to guarantee sub-second cold starts on Vercel Serverless.
+# The core TTS failover orchestrator and neural translation proxy run on Python 3.9+ standard library.
+# Optional utilities for extended environments:
+requests>=2.31.0
+deep-translator>=1.11.4

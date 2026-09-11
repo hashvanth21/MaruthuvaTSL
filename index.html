@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ta">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>மருத்துவ TSL — Maruthuva TSL | Tamil Sign Language Medical AI Bridge</title>
+  <meta name="description"
+    content="Real-time AI-powered Tamil Sign Language (TSL) to Clinical Text/Voice and Doctor Text/Voice to TSL Avatar translation system for healthcare consultations in Tamil Nadu.">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/clinical.css">
+  <link rel="stylesheet" href="css/avatar.css">
+
+  <!-- MediaPipe Hands, Pose & Camera Utils CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand-section">
+        <div class="brand-logo-badge">🫀</div>
+        <div class="brand-titles">
+          <h1>மருத்துவ TSL <span>Maruthuva TSL</span></h1>
+          <p>Tamil Sign Language (TSL) Medical AI Diagnostic & Clinical Communication Bridge</p>
+        </div>
+      </div>
+
+      <!-- View Mode Nav Switcher -->
+      <nav class="header-center-nav" aria-label="Consultation Views">
+        <button class="view-mode-btn active-mode" id="modeSplitBtn"
+          title="Dual Doctor & Patient Consultation View (Press 1)">
+          <span>👥</span> இருவழி பார்வை (Split) <kbd class="nav-kbd">1</kbd>
+        </button>
+        <button class="view-mode-btn" id="modeDoctorBtn" title="Doctor Console View (Press 2)">
+          <span>🩺</span> மருத்துவர் (Doctor) <kbd class="nav-kbd">2</kbd>
+        </button>
+        <button class="view-mode-btn" id="modePatientBtn" title="Deaf Patient Visual View (Press 3)">
+          <span>🧏‍♂️</span> நோயாளி (Patient) <kbd class="nav-kbd">3</kbd>
+        </button>
+      </nav>
+
+      <!-- Audio Language Selector & Actions -->
+      <div class="header-actions">
+        <!-- Switchable Audio Language Mode & Direct Mute Toggle -->
+        <div class="audio-lang-switcher" aria-label="Audio Language Mode">
+          <span class="switcher-label">🔊 ஆடியோ:</span>
+          <div class="lang-btn-group">
+            <button class="lang-chip" id="langTaOnlyBtn" data-lang="ta"
+              title="Play Tamil voice audio only">தமிழ்</button>
+            <button class="lang-chip" id="langEnOnlyBtn" data-lang="en"
+              title="Play English voice audio only">English</button>
+            <button class="lang-chip active-lang" id="langBothBtn" data-lang="both"
+              title="Play both Tamil and English voice audio">இருமொழியும்</button>
+          </div>
+          <button class="header-mute-btn" id="audioMuteToggle" title="Mute/Unmute Voice Audio (குரல் ஒலி அமைதி)">
+            🔊 Audio Active
+          </button>
+        </div>
+
+        <!-- Quick Voice Speaker Changer -->
+        <div class="voice-speaker-switcher"
+          style="display: flex; align-items: center; gap: 6px; background: rgba(15, 23, 42, 0.6); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.25);">
+          <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">🎙️ குரல் (Voice):</span>
+          <select id="headerVoiceSelect"
+            style="background: rgba(30, 41, 59, 0.9); color: #f8fafc; border: 1px solid #38bdf8; border-radius: 6px; padding: 4px 8px; font-size: 11.5px; outline: none; cursor: pointer;">
+            <option value="kavya">👩 Meera / Kavya (பெண்)</option>
+            <option value="gokul">👨 Gokul / Arvind (ஆண்)</option>
+            <option value="priya">👩 Priya (மென்மை)</option>
+            <option value="vijay">👨 Vijay (கம்பீரம்)</option>
+            <option value="kavitha">👩 Kavitha (பெண்)</option>
+            <option value="aditya">👨 Aditya (ஆண்)</option>
+          </select>
+        </div>
+
+        <button class="btn-header" id="openAiVaultBtn" title="Sarvam AI, IndicTrans2, Qwen2.5 & SQL Rule Vault"
+          style="background: rgba(99, 102, 241, 0.25); border-color: #6366f1;">
+          <span>🧠</span> AI & SQL பெட்டகம் (Vault)
+        </button>
+        <button class="btn-header" id="openLexiconBtn" title="Tamil Sign Language Lexicon & Fingerspelling">
+          <span>📚</span> TSL களஞ்சியம் (Lexicon)
+        </button>
+        <button class="btn-header btn-accent" id="openRxModalBtn" title="Clinical Prescription & QR Code">
+          <span>💊</span> மருந்துச் சீட்டு (Rx & QR)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Judge 15-Second Interactive Flow & Clinical Trust Ribbon -->
+  <aside class="judge-demo-ribbon" id="judgeDemoRibbon" aria-label="Judge Demo Quick Launch and Clinical Trust Metrics">
+    <div class="judge-demo-inner">
+      <div class="judge-pill-group">
+        <span class="judge-tag">🏆 நடுவர் நேரடி மாதிரி (JUDGE DEMO)</span>
+        <button class="judge-run-btn" id="judgeDemoFlowBtn"
+          title="Run 15-second orchestrated emergency consultation demo (Press D)">
+          <span class="judge-btn-pulse"></span>
+          <span>▶️ 15-வினாடி அவசர மாதிரி (Run 15s Emergency Demo Flow)</span>
+          <kbd class="judge-kbd">D</kbd>
+        </button>
+        <span class="judge-demo-desc">Patient TSL Sign → Sub-500ms Failover TTS → Qwen2.5 Triage → 3D Mudras → Local SVG
+          QR</span>
+      </div>
+      <div class="judge-trust-badges">
+        <span class="trust-badge" title="Zero third-party network requests; 100% offline local SVG QR encryption">
+          <span class="badge-dot dot-green"></span> 🔒 Air-Gapped Local PHI
+        </span>
+        <span class="trust-badge" title="Tier-1/Tier-2 hot-standby fallback with sub-500ms failover SLA">
+          <span class="badge-dot dot-cyan"></span> ⚡ Hot-Standby Failover (&lt;500ms SLA)
+        </span>
+        <span class="trust-badge" title="Anatomical hand joints and mudras calibrated to Tamil Nadu TSL standard">
+          <span class="badge-dot dot-indigo"></span> 🦾 3D Volumetric Hand Biomechanics
+        </span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Consultation Suite -->
+  <main class="app-main">
+
+    <!-- Deaf Culture Visual Applause Toast (Delight 👋✨) -->
+    <div class="visual-applause-toast" id="visualApplauseToast" role="status" aria-live="polite">
+      <span class="applause-hands">👋✨</span>
+      <div>
+        <div class="applause-text-ta">சிறந்த தொடர்பு! (Communication Successful)</div>
+        <div class="applause-text-en">TSL sign translated and received by doctor</div>
+      </div>
+    </div>
+
+    <!-- Emergency SOS Rapid Triage Bar -->
+    <div id="emergencySosContainer"></div>
+
+    <div class="consultation-grid split-view" id="mainAppContainer">
+
+      <!-- ==============================================
+           LEFT PANEL: PATIENT SIDE (TSL AI Camera & Body Tools)
+           ============================================== -->
+      <section class="consult-panel patient-panel" id="patientPanel">
+        <div class="panel-header-row">
+          <div class="panel-title-group">
+            <div class="panel-icon-badge badge-patient-icon">🧏‍♂️</div>
+            <div>
+              <h2>நோயாளி சைகை மொழி கேமரா (Patient TSL AI Vision)</h2>
+              <p>Real-time regional Tamil Sign Language (TSL) recognition</p>
+            </div>
+          </div>
+          <span class="status-badge badge-neutral" id="cameraStatusBadge">Camera Inactive</span>
+        </div>
+
+        <!-- Camera Viewport with Landmark Overlay & Friendly Hand Guide -->
+        <div class="camera-viewport-card">
+          <video class="webcam-video" id="webcamVideo" autoplay playsinline muted></video>
+          <canvas class="webcam-canvas" id="webcamCanvas"></canvas>
+
+          <!-- Friendly Deaf-First Hand Placement Guide Overlay -->
+          <div class="camera-guide-overlay" id="cameraGuideOverlay">
+            <span class="guide-hand-icon">✋</span>
+            <div class="guide-text-ta">கைகளை கேமரா முன் காட்டவும்</div>
+            <div class="guide-text-en">Position hands clearly within this frame</div>
+          </div>
+
+          <div class="camera-overlay-controls">
+            <button class="control-btn btn-primary" id="startCameraBtn">
+              <span>📹</span> கேமரா தொடங்கு (Start Camera)
+            </button>
+            <div class="auto-speak-toggle-group">
+              <label
+                style="font-size: 11.5px; color: #e2e8f0; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="autoSpeakCheckbox" checked />
+                <span>தானியங்கி ஆடியோ (Auto-Speak Voice)</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Vision Detection Engine Mode Selector & CSV Recorder -->
+          <div class="detection-engine-toolbar">
+            <div class="engine-mode-group">
+              <button class="engine-chip active-engine" id="engineRuleBasedBtn"
+                title="Rule-Based Euclidean Distance (100% Instant & Accurate)">
+                <span>⚡</span> நேரடி கணிப்பு (Direct Recognition)
+              </button>
+              <button class="engine-chip" id="engineRandomForestBtn"
+                title="Random Forest Ensemble ML Classifier (99% Trained on Coordinates)">
+                <span>🌲</span> AI மாதிரி (ML Model)
+              </button>
+            </div>
+            <div class="dataset-recorder-group">
+              <select class="dataset-sign-select" id="datasetSignSelect" title="Select sign to record">
+                <option value="HEADACHE">தலைவலி (Headache)</option>
+                <option value="BREATHING_PROBLEM">மூச்சுத் திணறல் (Breathing)</option>
+                <option value="STOMACH_PAIN">வயிற்று வலி (Stomach Pain)</option>
+                <option value="CHEST_PAIN">நெஞ்சு வலி (Chest Pain)</option>
+                <option value="FEVER">காய்ச்சல் (Fever)</option>
+              </select>
+              <button class="btn-record-csv" id="recordCsvBtn" title="Record MediaPipe (x,y,z) Coordinates to CSV">
+                <span>🔴</span> பதிவு (Record)
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Detection HUD Box -->
+        <div class="detection-hud-box" id="detectionHud">
+          <div class="hud-header-row">
+            <div class="hud-title-badge">
+              <span class="pulse-icon">⚡</span> AI கண்டறிதல் (Live AI HUD)
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button class="btn-mini-audio" id="hudSpeakTaBtn" title="Speak Tamil Audio">
+                🔊 தமிழ்
+              </button>
+              <button class="btn-mini-audio" id="hudSpeakEnBtn" title="Speak English Audio">
+                🔊 English
+              </button>
+              <button class="btn-mini-audio" id="hudMuteBtn" title="Mute/Unmute Audio (ஒலி அமைதி)">
+                🔊 Active
+              </button>
+              <span class="hud-latency-pill" id="activeTtsLatency"
+                style="display: none; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);"
+                title="Real-time TTS Failover & Synthesis Latency">⚡ 0.0ms</span>
+              <span class="hud-confidence-pill" id="activeSignConfidence">Waiting for sign...</span>
+            </div>
+          </div>
+
+          <div class="progress-track">
+            <div class="progress-bar" id="confidenceProgressBar"></div>
+          </div>
+
+          <div class="hud-sign-names">
+            <div class="hud-sign-badge" id="activeSignBadge"
+              style="display: none; align-self: flex-start; font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 4px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); margin-bottom: 4px;">
+            </div>
+            <div class="hud-sign-ta" id="activeSignNameTa">சைகைக்காக காத்திருக்கிறது (Perform TSL Sign)</div>
+            <div class="hud-sign-en" id="activeSignNameEn">Show medical symptom sign in front of the camera</div>
+          </div>
+
+          <div class="hud-dialect-note" id="activeSignDialectNote">
+            📍 தமிழ்நாடு TSL குறிப்பு: தமிழ் எழுத்துக்கள் மற்றும் பள்ளி சைகை முறைகள் பயன்படுத்தப்படுகிறது.
+          </div>
+
+          <!-- Quieter Collapsible Telemetry Drawer (Accessible for Clinicians & Devs) -->
+          <details class="telemetry-collapsible" id="telemetryDetails">
+            <summary>
+              <span>🛠️ தொழில்நுட்ப அளவீடுகள் (Telemetry & Models)</span>
+              <span style="font-size: 10px; opacity: 0.8;">விரிவாக்கு ▼</span>
+            </summary>
+            <div class="telemetry-content">
+              <!-- Live Euclidean Distance Radar Metrics Bar -->
+              <div class="hud-distance-radar-bar" id="hudDistanceRadar">
+                <div class="radar-chip" id="radarHeadChip"
+                  title="Distance from Hand Tip (Point 8) to Head/Forehead (Threshold < 0.12)">
+                  <span class="radar-dot dot-head"></span>
+                  <span class="radar-label">HEAD:</span>
+                  <span class="radar-val" id="radarHeadVal">--</span>
+                </div>
+                <div class="radar-chip" id="radarNoseChip"
+                  title="Distance from Hand Tip (Point 8) to Nose/Airway (Threshold < 0.10)">
+                  <span class="radar-dot dot-nose"></span>
+                  <span class="radar-label">NOSE:</span>
+                  <span class="radar-val" id="radarNoseVal">--</span>
+                </div>
+                <div class="radar-chip" id="radarChestChip"
+                  title="Distance from Hand Tip (Point 8) to Mid-Sternum (Threshold < 0.15)">
+                  <span class="radar-dot dot-chest"></span>
+                  <span class="radar-label">CHEST:</span>
+                  <span class="radar-val" id="radarChestVal">--</span>
+                </div>
+                <div class="radar-chip" id="radarStomachChip"
+                  title="Distance from Hand Tip (Point 8) to Lower Abdomen (Threshold < 0.18)">
+                  <span class="radar-dot dot-stomach"></span>
+                  <span class="radar-label">STOMACH:</span>
+                  <span class="radar-val" id="radarStomachVal">--</span>
+                </div>
+              </div>
+
+              <div class="hud-ai-model-tag" id="hudAiModelTag"
+                style="font-size: 11px; color: #a5b4fc; background: rgba(99, 102, 241, 0.15); padding: 5px 10px; border-radius: 4px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(99, 102, 241, 0.3);">
+                <span>🧠 <strong>Qwen2.5 Triage:</strong> <span id="qwenTriageBadge"
+                    style="color: #7dd3fc;">Normal</span></span>
+                <span>🔒 <strong>SQL Rule Vault:</strong> <span id="sqlSafetyBadge" style="color: #34d399;">Active (0
+                    Violations)</span></span>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Quick Simulation Gestures Grid -->
+        <details open class="below-part-details" id="simDetails">
+          <summary class="below-part-summary">
+            <span>🧏‍♂️ அவசர மருத்துவ சைகை சோதனை (Clinical TSL Triage Simulation)</span>
+            <span class="collapse-hint">▾</span>
+          </summary>
+          <div class="below-part-content">
+            <div class="sim-sign-grid" id="simSignGrid"></div>
+          </div>
+        </details>
+
+        <!-- Interactive Body Pain Map -->
+        <details open class="below-part-details" id="bodyMapDetails">
+          <summary class="below-part-summary">
+            <span>🫀 உடல் வலி சுட்டி (Interactive Body Pain Map)</span>
+            <span class="collapse-hint">▾</span>
+          </summary>
+          <div class="below-part-content" style="padding: 0;">
+            <div id="bodyMapContainer"></div>
+          </div>
+        </details>
+
+        <!-- Wong-Baker Pain Scale Matrix -->
+        <details open class="below-part-details" id="painScaleDetails">
+          <summary class="below-part-summary">
+            <span>📊 வலி தீவிரத்தன்மை அளவுகோல் (Wong-Baker Pain Scale & TSL)</span>
+            <span class="collapse-hint">▾</span>
+          </summary>
+          <div class="below-part-content" style="padding: 0;">
+            <div id="painScaleContainer"></div>
+          </div>
+        </details>
+      </section>
+
+      <!-- ==============================================
+           RIGHT PANEL: DOCTOR SIDE (Avatar & Consultation Station)
+           ============================================== -->
+      <section class="consult-panel doctor-panel" id="doctorPanel">
+        <div class="panel-header-row">
+          <div class="panel-title-group">
+            <div class="panel-icon-badge badge-doctor-icon">🩺</div>
+            <div>
+              <h2>மருத்துவர் ஆலோசனை அரங்கம் (Doctor Clinical Bridge)</h2>
+              <p>Speech/Text to Tamil & Indian Sign Language (TSL / ISL) Hand Signs</p>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="status-badge badge-active">Consultation Live</span>
+          </div>
+        </div>
+
+        <!-- TSL / ISL Hand Sign Display Canvas -->
+        <div class="avatar-viewport-card">
+          <canvas class="avatar-canvas" id="avatarCanvas"></canvas>
+
+          <!-- Animation Speed Control & Replay -->
+          <div class="avatar-speed-controls">
+            <button class="control-btn btn-mini" id="playAvatarBtn" title="Replay current TSL/ISL sign"
+              style="padding: 4px 10px; font-size: 11px; background: rgba(99, 102, 241, 0.3); border: 1px solid #6366f1;">
+              <span>🔁</span> மீண்டும் பார்க்க (Replay)
+            </button>
+            <span>வேகம் (Speed):</span>
+            <select class="speed-select" id="avatarSpeedSelect">
+              <option value="0.5">0.5x மெதுவாக (Slow)</option>
+              <option value="0.75">0.75x</option>
+              <option value="1.0" selected>1.0x இயல்பானது (Normal)</option>
+              <option value="1.25">1.25x வேகமாக</option>
+            </select>
+          </div>
+
+          <!-- Avatar Subtitles / Tamil Lip-Sync Gloss -->
+          <div class="avatar-subtitles-card">
+            <div class="sub-ta" id="avatarSubtitleTa">மருத்துவரின் அறிவுரை சைகையாக காட்டப்படும்</div>
+            <div class="sub-en" id="avatarSubtitleEn">Doctor instructions will be demonstrated in Tamil & Indian Sign
+              Language</div>
+            <div class="sub-handshape" id="avatarHandshapeInfo">கை வடிவம்: தயார் நிலையில் உள்ளது (TSL / ISL Hand Sign
+              Ready)</div>
+          </div>
+        </div>
+
+        <!-- Doctor Voice & Custom Text Input -->
+        <div class="doctor-input-box">
+          <div class="input-row">
+            <input type="text" class="doctor-input-field" id="doctorTextInput"
+              placeholder="மருத்துவர் அறிவுரையை தட்டச்சு செய்க... (Type clinical instruction or question)" />
+            <button class="voice-mic-btn" id="doctorVoiceBtn" title="Doctor Voice Input (Tamil / English)">
+              🎤
+            </button>
+            <button class="control-btn btn-primary" id="sendDoctorTextBtn">
+              <span>🚀</span> TSL மாற்று (Send TSL)
+            </button>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+            <div class="voice-status-text" id="doctorVoiceStatus">Doctor Voice Input Idle (Click Mic to speak)</div>
+            <div class="audio-waveform-card" id="audioWaveformCard"
+              title="Real-time Audio Speech & TTS Waveform Visualizer">
+              <span style="font-size: 10px; color: #38bdf8; font-weight: 700;">WAVE:</span>
+              <canvas class="audio-waveform-canvas" id="audioWaveformCanvas" width="120" height="24"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Doctor Clinical Presets Accordion -->
+        <details open class="below-part-details" id="doctorPresetsDetails">
+          <summary class="below-part-summary">
+            <span>🩺 பொதுவான மருத்துவ வினாக்கள் (Clinical Query Presets)</span>
+            <span class="collapse-hint">▾</span>
+          </summary>
+          <div class="below-part-content">
+            <div class="doctor-presets-container" id="doctorPresetsAccordion"></div>
+          </div>
+        </details>
+
+        <!-- Real-time Consultation Stream Timeline -->
+        <details open class="below-part-details" id="timelineDetails">
+          <summary class="below-part-summary">
+            <span>📜 மருத்துவ உரையாடல் பதிவு (Clinical Consultation Stream)</span>
+            <span class="collapse-hint">▾</span>
+          </summary>
+          <div class="below-part-content">
+            <div class="timeline-section" style="margin-top: 2px;">
+              <div class="timeline-header-bar">
+                <span style="font-size: 11px; color: var(--text-secondary);">நிகழ்நேர உரையாடல் பதிவுகள் (Live Event
+                  Log)</span>
+                <div class="timeline-btn-group">
+                  <button class="btn-mini" id="speakAllLogBtn" title="Speak All">🔊 Speak All</button>
+                  <button class="btn-mini" id="clearLogBtn">Clear</button>
+                </div>
+              </div>
+              <div class="consultation-timeline" id="consultationTimeline"></div>
+            </div>
+          </div>
+        </details>
+
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ==============================================
+       PRESCRIPTION & TSL QR CODE MODAL
+       ============================================== -->
+  <div class="rx-modal-backdrop" id="rxModal" style="display: none;">
+    <div class="rx-modal-card">
+      <div class="rx-header">
+        <div class="header-left">
+          <span style="font-size: 24px;">💊</span>
+          <div>
+            <h3>மருத்துவ மருந்துச் சீட்டு & TSL QR வழிகாட்டி</h3>
+            <p>Clinical Prescription Slip & Home TSL Video QR Generator</p>
+          </div>
+        </div>
+        <button class="modal-close-btn" id="closeRxModalBtn">✕</button>
+      </div>
+
+      <div class="rx-modal-body">
+        <div class="rx-builder-grid">
+          <div class="rx-control-group">
+            <label>மருந்து தேர்வு (Select Medicine):</label>
+            <select class="rx-select" id="rxMedicineSelect"></select>
+          </div>
+
+          <div class="rx-control-group">
+            <label>வேளை மற்றும் நேரம் (Dosage Timing):</label>
+            <select class="rx-select" id="rxTimingSelect">
+              <option value="morning_night">காலை 1 + இரவு 1 (Morning & Night)</option>
+              <option value="morning">காலை மட்டும் 1 (Morning only)</option>
+              <option value="night">இரவு மட்டும் 1 (Night only)</option>
+              <option value="thrice">காலை 1 + மதியம் 1 + இரவு 1 (Thrice daily)</option>
+            </select>
+          </div>
+
+          <div class="rx-control-group">
+            <label>உணவு முறை (Food Relation):</label>
+            <select class="rx-select" id="rxFoodSelect">
+              <option value="after_food">உணவு உண்ட பிறகு (After Food)</option>
+              <option value="before_food">வெறும் வயிற்றில் / உணவிற்கு முன் (Before Food)</option>
+            </select>
+          </div>
+
+          <div class="rx-control-group">
+            <label>நாட்கள் எண்ணிக்கை (Duration Days):</label>
+            <input type="number" class="rx-input" id="rxDaysInput" value="3" min="1" max="30" />
+          </div>
+        </div>
+
+        <button class="control-btn btn-primary" id="addMedToRxBtn" style="width: 100%;">
+          <span>➕</span> மருந்துச் சீட்டில் சேர்க்க (Add to Prescription)
+        </button>
+
+        <!-- Current Medicine List -->
+        <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-top: 10px;">
+          சேர்க்கப்பட்ட மருந்துகள் (Prescribed Medication Schedule):
+        </div>
+        <div id="rxMedicineList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+
+        <!-- TSL QR Code Card -->
+        <div class="rx-qr-container">
+          <img
+            src="data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='180'%20height='180'%20viewBox='0%200%20180%20180'%3E%3Crect%20width='100%25'%20height='100%25'%20fill='%231e293b'%20rx='8'/%3E%3Ctext%20x='50%25'%20y='50%25'%20fill='%2338bdf8'%20font-size='12'%20font-family='sans-serif'%20text-anchor='middle'%20dominant-baseline='middle'%3EAir-Gapped%20TSL%20QR%20Ready%3C/text%3E%3C/svg%3E"
+            class="rx-qr-img" id="rxQrCodeImg" alt="TSL QR Code" />
+          <div class="rx-qr-info">
+            <h4>📱 வீட்டில் TSL சைகை வீடியோ காண QR குறியீடு</h4>
+            <p>Patient can scan this QR code on any smartphone to watch step-by-step TSL sign language instructions for
+              their medicine timings at home.</p>
+            <p style="color: #38bdf8; font-size: 11.5px; margin-top: 4px;">தமிழ்நாடு செவித்திறன் குறைபாடுள்ளோருக்கான
+              பிரத்யேக டிஜிட்டல் வசதி.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="rx-footer">
+        <button class="control-btn btn-primary" id="playRxTslBtn">
+          <span>▶️</span> முழு TSL சைகை பார்க்க (Play All TSL)
+        </button>
+        <button class="control-btn btn-primary" id="printRxBtn" style="background: #059669;">
+          <span>🖨️</span> அச்சிடுக (Print Prescription)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI & SQL Rule Vault Modal Container -->
+  <div id="aiVaultModalContainer" style="display: none;"></div>
+
+  <!-- TSL Lexicon Modal Container -->
+  <div id="lexiconModalContainer" style="display: none;"></div>
+
+  <!-- Global Master Audio Player -->
+  <audio id="masterAudioPlayer" preload="auto" style="display: none;"></audio>
+
+  <!-- Main JavaScript App -->
+  <script type="module" src="js/app.js?v=20260911_tts_v6"></script>
+</body>
+
+</html>
