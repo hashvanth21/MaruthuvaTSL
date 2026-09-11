@@ -154,6 +154,11 @@ export class SpeechAudioService {
       if (this.synthesis && this.synthesis.paused) {
         this.synthesis.resume();
       }
+      const master = document.getElementById('masterAudioPlayer') || this.audioElement;
+      if (master && master.paused && !master.src) {
+        master.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+        master.play().then(() => { master.pause(); master.currentTime = 0; master.src = ''; }).catch(() => {});
+      }
     } catch (e) {}
   }
 
@@ -214,16 +219,17 @@ export class SpeechAudioService {
   /**
    * Play audio data (Base64 WAV / MP3 or data URI) with Web Audio API.
    * Protected against stale session overwrites and overlap races.
+   * Returns true if audio playback succeeded, false otherwise.
    */
   async playAudioBufferOrUri(audioPayload, onEndCallback = null, session = null) {
     if (this.isMuted || !audioPayload) {
       if (onEndCallback) onEndCallback();
-      return;
+      return false;
     }
 
     // Check session freshness
     if (session && session !== this.activeSessionId) {
-      return; // Stale session, discard!
+      return false; // Stale session, discard!
     }
 
     this.unlockAudio();
@@ -251,6 +257,23 @@ export class SpeechAudioService {
       }
     }
 
+    // MIME type detection
+    let mimeType = 'audio/wav';
+    if (audioPayload.startsWith('data:audio/mpeg') || audioPayload.startsWith('data:audio/mp3')) {
+      mimeType = 'audio/mpeg';
+    } else if (
+      base64.startsWith('//u') ||
+      base64.startsWith('//v') ||
+      base64.startsWith('//w') ||
+      base64.startsWith('SUQz') ||
+      base64.startsWith('/+M') ||
+      base64.startsWith('//O')
+    ) {
+      mimeType = 'audio/mpeg';
+    } else if (base64.startsWith('UklGR')) {
+      mimeType = 'audio/wav';
+    }
+
     // TIER A: Web Audio API (Primary - Zero latency, immune to transient gesture timeouts)
     try {
       const ctx = this.initAudioContext();
@@ -260,7 +283,7 @@ export class SpeechAudioService {
         }
 
         if (session && session !== this.activeSessionId) {
-          return; // Abort if invalidated while resuming context
+          return false; // Abort if invalidated while resuming context
         }
 
         const binaryString = window.atob(base64);
@@ -276,7 +299,7 @@ export class SpeechAudioService {
         });
 
         if (session && session !== this.activeSessionId) {
-          return; // Abort if superseded while decoding audio
+          return false; // Abort if superseded while decoding audio
         }
 
         const source = ctx.createBufferSource();
@@ -293,7 +316,7 @@ export class SpeechAudioService {
         };
 
         source.start(0);
-        return;
+        return true;
       }
     } catch (webAudioErr) {
       console.warn('[SpeechAudioService] Web Audio decode error, trying HTMLAudio fallback:', webAudioErr);
@@ -302,10 +325,10 @@ export class SpeechAudioService {
     // TIER B: HTMLAudioElement with Data URI
     try {
       if (session && session !== this.activeSessionId) {
-        return;
+        return false;
       }
 
-      const dataUri = audioPayload.startsWith('data:') ? audioPayload : `data:audio/wav;base64,${audioPayload}`;
+      const dataUri = audioPayload.startsWith('data:') ? audioPayload : `data:${mimeType};base64,${base64}`;
       const master = document.getElementById('masterAudioPlayer') || this.audioElement;
       if (master) {
         master.pause();
@@ -321,18 +344,16 @@ export class SpeechAudioService {
         };
         const playPromise = master.play();
         if (playPromise !== undefined) {
-          playPromise.catch((pErr) => {
-            console.warn('[SpeechAudioService] HTMLAudio play catch:', pErr);
-            finish();
-          });
+          await playPromise;
         }
-        return;
+        return true;
       }
     } catch (e) {
       console.warn('[SpeechAudioService] HTMLAudio element error:', e);
     }
 
     finish();
+    return false;
   }
 
   // Alias for backward compatibility
@@ -387,8 +408,8 @@ export class SpeechAudioService {
         const data = await resp.json();
         if (data && (data.audio_base64 || data.audio_data_uri)) {
           const payload = data.audio_base64 || data.audio_data_uri;
-          await this.playAudioBufferOrUri(payload, onEndCallback, mySession);
-          return;
+          const played = await this.playAudioBufferOrUri(payload, onEndCallback, mySession);
+          if (played) return;
         }
       }
     } catch (apiErr) {
@@ -499,8 +520,8 @@ export class SpeechAudioService {
         const data = await resp.json();
         if (data && (data.audio_base64 || data.audio_data_uri)) {
           const payload = data.audio_base64 || data.audio_data_uri;
-          await this.playAudioBufferOrUri(payload, onEndCallback, mySession);
-          return;
+          const played = await this.playAudioBufferOrUri(payload, onEndCallback, mySession);
+          if (played) return;
         }
       }
     } catch (apiErr) {

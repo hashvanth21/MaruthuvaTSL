@@ -210,7 +210,10 @@ class handler(BaseHTTPRequestHandler):
                     }).encode('utf-8'))
                     return
 
-                audio_b64 = base64.b64encode(res['audio_bytes']).decode('utf-8')
+                audio_bytes = res['audio_bytes']
+                audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+                is_mp3 = audio_bytes.startswith(b'\xff') or audio_bytes.startswith(b'ID3')
+                mime = "audio/mpeg" if is_mp3 else "audio/wav"
                 response_payload = {
                     "success": True,
                     "engine": res['engine_used'],
@@ -219,7 +222,7 @@ class handler(BaseHTTPRequestHandler):
                     "circuit_state": res['circuit_state'],
                     "text_normalized": res['text_normalized'],
                     "audio_base64": audio_b64,
-                    "audio_data_uri": f"data:audio/wav;base64,{audio_b64}"
+                    "audio_data_uri": f"data:{mime};base64,{audio_b64}"
                 }
 
                 self.send_response(200)

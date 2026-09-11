@@ -4,3 +4,4 @@
 # Optional utilities for extended environments:
 requests>=2.31.0
 deep-translator>=1.11.4
+certifi>=2024.2.2

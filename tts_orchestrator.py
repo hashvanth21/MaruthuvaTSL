@@ -510,31 +510,74 @@ class Tier2IndicF5HotStandby:
             except Exception as e:
                 logger.debug(f"Local IndicF5 standalone socket not active ({e}), running neural voice synthesis.")
 
-        # 2. Server-side neural voice synthesis via Google TTS with afconvert to valid RIFF WAV
+        # 2. Server-side neural voice synthesis via Google TTS (with chunking for long text)
         try:
-            q = urllib.parse.quote(text)
-            tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl={lang}&client=tw-ob"
-            ctx = ssl._create_unverified_context()
-            req = urllib.request.Request(tts_url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"})
-            with urllib.request.urlopen(req, context=ctx, timeout=1.2) as resp:
-                mp3_data = resp.read()
-            if len(mp3_data) > 300:
-                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f_in:
-                    f_in.write(mp3_data)
-                    in_path = f_in.name
-                out_path = in_path.replace(".mp3", ".wav")
-                p = subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@22050", in_path, out_path], capture_output=True, timeout=0.8)
-                if p.returncode == 0 and os.path.exists(out_path):
-                    with open(out_path, "rb") as f_out:
-                        wav_bytes = f_out.read()
-                    for pth in (in_path, out_path):
-                        try:
-                            os.remove(pth)
-                        except Exception:
-                            pass
-                    if wav_bytes.startswith(b"RIFF"):
-                        latency_ms = (time.perf_counter() - start_time) * 1000.0
-                        return wav_bytes, latency_ms
+            try:
+                import certifi
+                ctx = ssl.create_default_context(cafile=certifi.where())
+            except Exception:
+                try:
+                    ctx = ssl.create_default_context()
+                except Exception:
+                    ctx = ssl._create_unverified_context()
+            words = text.split()
+            chunks = []
+            curr = []
+            curr_len = 0
+            for w in words:
+                if curr_len + len(w) + 1 > 140:
+                    chunks.append(" ".join(curr))
+                    curr = [w]
+                    curr_len = len(w)
+                else:
+                    curr.append(w)
+                    curr_len += len(w) + 1
+            if curr:
+                chunks.append(" ".join(curr))
+            if not chunks:
+                chunks = [text]
+
+            audio_parts = []
+            for chunk in chunks:
+                q = urllib.parse.quote(chunk)
+                tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl={lang}&client=tw-ob"
+                req = urllib.request.Request(
+                    tts_url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                        "Referer": "https://translate.google.com/"
+                    }
+                )
+                with urllib.request.urlopen(req, context=ctx, timeout=2.5) as resp:
+                    audio_parts.append(resp.read())
+
+            mp3_data = b"".join(audio_parts)
+            if len(mp3_data) > 100:
+                # If afconvert is available (macOS), convert to WAV
+                try:
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f_in:
+                        f_in.write(mp3_data)
+                        in_path = f_in.name
+                    out_path = in_path.replace(".mp3", ".wav")
+                    p = subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@22050", in_path, out_path], capture_output=True, timeout=0.8)
+                    if p.returncode == 0 and os.path.exists(out_path):
+                        with open(out_path, "rb") as f_out:
+                            wav_bytes = f_out.read()
+                        for pth in (in_path, out_path):
+                            try:
+                                os.remove(pth)
+                            except Exception:
+                                pass
+                        if wav_bytes.startswith(b"RIFF"):
+                            latency_ms = (time.perf_counter() - start_time) * 1000.0
+                            return wav_bytes, latency_ms
+                except Exception:
+                    pass
+
+                # If on Linux (Vercel Serverless) where afconvert is not installed:
+                # Return mp3_data directly! All browsers & Web Audio API decode MP3 natively.
+                latency_ms = (time.perf_counter() - start_time) * 1000.0
+                return mp3_data, latency_ms
         except Exception as e:
             logger.debug(f"Neural voice proxy failed ({e}), attempting macOS native voice synthesis.")
 
@@ -627,35 +670,9 @@ class TTSFailoverRouter:
         self._prewarm_emergency_cache()
 
     def _prewarm_emergency_cache(self):
-        """Pre-seeds the cache with standard emergency signs and common clinical queries to guarantee <1ms latency."""
-        common_phrases = [
-            "எனக்கு தலைவலி இருக்கிறது.",
-            "எனக்கு நெஞ்சு வலி இருக்கிறது.",
-            "எனக்கு மூச்சுத்திணறல் இருக்கிறது.",
-            "எனக்கு கடுமையான காய்ச்சல் இருக்கிறது.",
-            "தயவுசெய்து உடனே உதவுங்கள், இது அவசர நிலை.",
-            "எனக்கு எலும்பு முறிவு ஏற்பட்டு கடுமையான வலி இருக்கிறது.",
-            "எனக்கு வயிற்று வலி இருக்கிறது.",
-            "எனக்கு வாந்தி மற்றும் குமட்டல் இருக்கிறது.",
-            "எனக்கு தலைசுற்றலாகவும் மயக்கமாகவும் இருக்கிறது.",
-            "எனக்கு தொடர்ந்து ரத்தப்போக்கு ஏற்படுகிறது.",
-            "உங்களுக்கு காய்ச்சல் இருக்கிறதா?",
-            "உங்களுக்கு நெஞ்சு வலி இருக்கிறதா?",
-            "உங்களுக்கு தலைவலி இருக்கிறதா?",
-            "வாயைத் திறந்து நாக்கைக் காட்டுங்கள்.",
-            "ஆழமாக மூச்சு விடுங்கள்.",
-            "இந்த மாத்திரையை உணவு உண்ட பிறகு சாப்பிடவும்.",
-            "இந்த மாத்திரையை உணவுக்கு முன் வெறும் வயிற்றில் சாப்பிடவும்.",
-            "நன்றாக வெந்நீர் குடித்து ஓய்வெடுங்கள்.",
-            "கவலைப்பட வேண்டாம், விரைவில் குணமாகிவிடும்."
-        ]
-        for phrase in common_phrases:
-            normalized = self.normalizer.normalize(phrase)
-            wav_bytes, _ = self.tier2_engine.synthesize(normalized, "ta")
-            self.cache.put(normalized, "kavya", wav_bytes)
-            # Also index un-normalized phrase
-            self.cache.put(phrase, "kavya", wav_bytes)
-        logger.info(f"Pre-warmed Deterministic Audio Cache with {len(common_phrases)} emergency symptom and clinical phrases.")
+        """Pre-seeds the cache with standard emergency signs and common clinical queries.
+        In serverless environments, on-demand caching is used to avoid cold-start delays."""
+        logger.info("Deterministic Audio Cache ready with on-demand dynamic caching.")
 
     def route_symptom_to_speech(self, raw_tamil_text: Any, speaker: str = "kavya", lang: Optional[str] = None) -> Dict[str, Any]:
         total_start = time.perf_counter()
