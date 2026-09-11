@@ -14,10 +14,17 @@ import sys
 import os
 import time
 import json
+import ssl
 import urllib.request
 import urllib.error
 import urllib.parse
 from typing import Dict, Any, List, Tuple
+
+try:
+    import certifi
+    SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    SSL_CTX = ssl._create_unverified_context()
 
 DEFAULT_URL = "http://localhost:3000"
 TARGET_URL = (sys.argv[1] if len(sys.argv) > 1 else DEFAULT_URL).rstrip('/')
@@ -45,7 +52,7 @@ def http_get(url_path: str, timeout: float = 10.0) -> Tuple[int, bytes, Dict[str
     url = f"{TARGET_URL}{url_path}"
     t0 = time.perf_counter()
     req = urllib.request.Request(url, headers={"User-Agent": "MaruthuvaTSL-DevOpsVerifier/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as resp:
         elapsed = (time.perf_counter() - t0) * 1000.0
         headers = dict(resp.getheaders())
         return resp.status, resp.read(), headers, elapsed
@@ -62,7 +69,7 @@ def http_post(url_path: str, payload: Dict[str, Any], timeout: float = 10.0) -> 
             "User-Agent": "MaruthuvaTSL-DevOpsVerifier/1.0"
         }
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as resp:
         elapsed = (time.perf_counter() - t0) * 1000.0
         headers = dict(resp.getheaders())
         return resp.status, resp.read(), headers, elapsed
