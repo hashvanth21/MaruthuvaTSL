@@ -1063,29 +1063,41 @@ class MedTslApp {
     }
   }
 
-  async handleDoctorCustomText() {
+  async handleDoctorCustomText(customText = null) {
     this.speechService.unlockAudio();
-    const text = this.dom.doctorTextInput.value.trim();
+    const text = (customText !== null ? customText : this.dom.doctorTextInput.value).trim();
     if (!text) return;
 
     this.dom.doctorTextInput.value = '';
 
     // AI4Bharat IndicTrans2 Machine Translation (ta_Tam <-> eng_Latn)
-    const isTamil = this.indicTransService.detectScript(text) === 'Tamil';
-    const translation = isTamil
-      ? await this.indicTransService.translateTaToEn(text)
-      : await this.indicTransService.translateEnToTa(text);
+    let textTa = text;
+    let textEn = text;
 
-    const textTa = isTamil ? text : (translation.translatedText || text);
-    const textEn = isTamil ? (translation.translatedText || text) : text;
+    try {
+      const isTamil = this.indicTransService.detectScript(text) === 'Tamil';
+      const translation = isTamil
+        ? await this.indicTransService.translateTaToEn(text)
+        : await this.indicTransService.translateEnToTa(text);
+
+      textTa = isTamil ? text : (translation.translatedText || text);
+      textEn = isTamil ? (translation.translatedText || text) : text;
+    } catch (transErr) {
+      console.warn('[DoctorInput] Translation fallback to raw text:', transErr);
+    }
 
     // Qwen2.5 Clinical Sequence Planner & TSL Grammar Compiler
-    // Combine original and translated text to ensure 100% token coverage in either language
-    const queryForPlanner = `${text} ${textTa} ${textEn}`.toLowerCase();
-    const qwenPlan = await this.qwenService.planTslSignSequence(queryForPlanner);
-    const compiledSigns = (qwenPlan && qwenPlan.sequence && qwenPlan.sequence.length > 0)
-      ? qwenPlan.sequence
-      : this.compileTextToTslSigns(queryForPlanner);
+    let compiledSigns = [];
+    try {
+      const queryForPlanner = `${text} ${textTa} ${textEn}`.toLowerCase();
+      const qwenPlan = await this.qwenService.planTslSignSequence(queryForPlanner);
+      compiledSigns = (qwenPlan && qwenPlan.sequence && qwenPlan.sequence.length > 0)
+        ? qwenPlan.sequence
+        : this.compileTextToTslSigns(queryForPlanner);
+    } catch (planErr) {
+      console.warn('[DoctorInput] Sequence planner fallback:', planErr);
+      compiledSigns = this.compileTextToTslSigns(text);
+    }
 
     this.addLogEntry({
       sender: 'doctor',
@@ -1102,12 +1114,13 @@ class MedTslApp {
       if (this.dom.avatarSubtitleEn) this.dom.avatarSubtitleEn.textContent = textEn;
     }
 
-    if (this.autoSpeakEnabled) {
-      this.speechService.speakBilingual(textTa, textEn);
-    }
+    // Guaranteed Audio Delivery (Voice + Text instructions must be delivered to patient)
+    this.speechService.speakBilingual(textTa, textEn);
   }
 
   toggleDoctorVoiceInput() {
+    this.speechService.unlockAudio(); // Immediately unlock audio playback upon mic click
+
     if (this.isVoiceInputActive) {
       this.speechService.stopListening();
       this.isVoiceInputActive = false;
@@ -1119,26 +1132,58 @@ class MedTslApp {
       this.isVoiceInputActive = true;
 
       const sttLang = this.speechService.languageMode === 'en' ? 'en-IN' : 'ta-IN';
-      this.speechService.startListening(sttLang,
+      let capturedFinal = '';
+
+      const started = this.speechService.startListening(
+        sttLang,
         (result) => {
-          this.dom.doctorTextInput.value = result.final || result.interim;
-          if (result.isFinal) {
-            this.handleDoctorCustomText();
-            this.toggleDoctorVoiceInput();
+          const streamText = result.final || result.interim;
+          if (streamText) {
+            this.dom.doctorTextInput.value = streamText;
+          }
+          if (result.isFinal && result.final && result.final.trim()) {
+            capturedFinal = result.final.trim();
+            this.speechService.stopListening();
+            this.isVoiceInputActive = false;
+            this.dom.doctorVoiceBtn.classList.remove('recording-pulse');
+            this.dom.doctorVoiceStatus.textContent = 'Voice Captured — Translating & Delivering Audio...';
+            this.handleDoctorCustomText(capturedFinal);
           }
         },
         () => {
           this.isVoiceInputActive = false;
           this.dom.doctorVoiceBtn.classList.remove('recording-pulse');
-          this.dom.doctorVoiceStatus.textContent = 'Voice Input Completed';
+          if (!capturedFinal) {
+            const residual = this.dom.doctorTextInput.value.trim();
+            if (residual) {
+              this.dom.doctorVoiceStatus.textContent = 'Voice Captured — Translating & Delivering Audio...';
+              this.handleDoctorCustomText(residual);
+            } else {
+              this.dom.doctorVoiceStatus.textContent = 'Voice Input Completed (Click Mic to speak again)';
+            }
+          }
         },
         (err) => {
           console.warn('STT error:', err);
           this.isVoiceInputActive = false;
           this.dom.doctorVoiceBtn.classList.remove('recording-pulse');
-          this.dom.doctorVoiceStatus.textContent = 'Voice Input Error (Try typing)';
+          if (err === 'no-speech') {
+            this.dom.doctorVoiceStatus.textContent = 'No speech detected. Click Mic to speak again.';
+          } else if (err === 'not-allowed') {
+            this.dom.doctorVoiceStatus.textContent = 'Microphone permission blocked. Please allow mic access in browser.';
+          } else if (err === 'audio-capture') {
+            this.dom.doctorVoiceStatus.textContent = 'No microphone device found. Connect a mic and retry.';
+          } else {
+            this.dom.doctorVoiceStatus.textContent = `Voice Input: ${err || 'Try typing'}`;
+          }
         }
       );
+
+      if (!started) {
+        this.isVoiceInputActive = false;
+        this.dom.doctorVoiceBtn.classList.remove('recording-pulse');
+        this.dom.doctorVoiceStatus.textContent = 'Speech recognition unavailable in this browser (Please type your query)';
+      }
     }
   }
 

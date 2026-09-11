@@ -627,6 +627,9 @@ export class SpeechAudioService {
 
   // Start Doctor Speech-to-Text
   startListening(language = 'ta-IN', onResultCallback, onEndCallback, onErrorCallback) {
+    // Re-initialize recognition instance to clear any stalled internal states
+    this.initSpeechRecognition();
+
     if (!this.recognition) {
       if (onErrorCallback) onErrorCallback('Speech recognition is not supported in this browser.');
       return false;
@@ -638,6 +641,15 @@ export class SpeechAudioService {
 
     this.recognitionLanguage = language;
     this.recognition.lang = language;
+
+    // Proactively request microphone access if supported
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        stream.getTracks().forEach((track) => track.stop());
+      }).catch((e) => {
+        console.warn('[SpeechAudioService] getUserMedia mic check:', e);
+      });
+    }
 
     this.recognition.onresult = (event) => {
       let finalTranscript = '';
@@ -653,9 +665,9 @@ export class SpeechAudioService {
 
       if (onResultCallback) {
         onResultCallback({
-          final: finalTranscript,
-          interim: interimTranscript,
-          isFinal: finalTranscript.length > 0
+          final: finalTranscript.trim(),
+          interim: interimTranscript.trim(),
+          isFinal: finalTranscript.trim().length > 0
         });
       }
     };
@@ -676,13 +688,20 @@ export class SpeechAudioService {
       return true;
     } catch (e) {
       console.error('Speech recognition start failed:', e);
+      this.isListening = false;
+      if (onErrorCallback) onErrorCallback(e.message || 'start_failed');
       return false;
     }
   }
 
   stopListening() {
-    if (this.recognition && this.isListening) {
-      this.recognition.stop();
+    if (this.recognition) {
+      try {
+        this.recognition.abort(); // abort immediately terminates recording without lingering buffer locks
+      } catch (e) {}
+      try {
+        this.recognition.stop();
+      } catch (e) {}
       this.isListening = false;
     }
   }
